@@ -1,184 +1,106 @@
 openapi: 3.1.0
+
 info:
-  title: External API
+  title: ML Service API
   description: >-
-    Внешнее API антифрод-системы. Получает данные клиента из Online-витрины и
-    принимает ML-модели от аналитиков.
+    API ML-сервиса антифрода. Получает признаки клиента от сервиса статистики,
+    прогоняет через модель и отдает скор. Модели лежат в S3, сервис их подтягивает
+    при старте. Сам решение не выносит — это делает отдельный контейнер "Решение".
   version: 1.0.0
+
 servers:
-  - url: 'https://first.bank.local/v1'
+  - url: 'https://ml-service.anti-fraud.local/v1'
     description: Основной сервер
+
 tags:
-  - name: Clients
-    description: Данные о клиенте из внешнего источника
+  - name: Inference
+    description: Инференс модели (получение скора)
   - name: Models
-    description: ML-модели от команды аналитиков
+    description: Список моделей (только чтение, они в S3)
+
 paths:
-  '/clients/{client_id}':
-    get:
-      summary: Получить данные клиента
-      tags:
-        - Clients
-      parameters:
-        - name: client_id
-          in: path
-          required: true
-          description: ID клиента
-          schema:
-            type: string
-          examples:
-            default:
-              summary: Пример ID клиента
-              value: client_5267
-      responses:
-        '200':
-          description: Данные клиента найдены
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  client_id:
-                    type: string
-                  age:
-                    type: integer
-                  geo:
-                    type: string
-              examples:
-                success:
-                  summary: Успешный ответ с данными клиента
-                  value:
-                    client_id: client_5267
-                    age: 19
-                    geo: RU-MOW
-        '400':
-          description: Неправильный ID клиента
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  error:
-                    type: string
-              examples:
-                bad_request:
-                  summary: Пример ошибки 400
-                  value:
-                    error: Invalid client_id format
-        '404':
-          description: Клиент не найден во внешнем источнике
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  error:
-                    type: string
-              examples:
-                not_found:
-                  summary: Пример ошибки 404
-                  value:
-                    error: Client not found
-        '500':
-          description: Внешний источник недоступен
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  error:
-                    type: string
-              examples:
-                server_error:
-                  summary: Пример ошибки 500
-                  value:
-                    error: External source unavailable
-  /models:
+  /inference/check:
     post:
-      summary: Загрузить ML-модель
+      summary: Получить скор по признакам
       tags:
-        - Models
+        - Inference
+      description: >-
+        Принимает признаки клиента от статистики, применяет модель и возвращает скор.
+        Решение (BLOCKED/APPROVED) принимает уже сервис "Решение".
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              type: object
-              required:
-                - name
-                - version
-              properties:
-                name:
-                  type: string
-                version:
-                  type: string
+              $ref: '#/components/schemas/InferenceRequest'
             examples:
-              new_model:
-                summary: Пример загрузки новой модели
+              test_features:
+                summary: Пример признаков
                 value:
-                  name: fraud-detector
-                  version: 1.4.2
+                  transaction_id: "tx_98765"
+                  client_id: "client_5267"
+                  features:
+                    avg_amount_30d: 12500.75
+                    tx_count_24h: 3
+                    geo_risk: 0.15
+                    merchant_risk: 0.05
       responses:
-        '201':
-          description: Модель загружена и сохранена в S3/MinIO
+        '200':
+          description: Скор от модели
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  status:
-                    type: string
+                $ref: '#/components/schemas/InferenceResponse'
               examples:
-                created:
-                  summary: Модель успешно создана
+                high_risk:
+                  summary: Высокий риск
                   value:
-                    status: Model uploaded successfully
+                    transaction_id: "tx_98765"
+                    score: 0.98
+                    check_details:
+                      tool: "fraud-detector"
+                      version: "1.4.2"
+                      action: "Inference"
+                      actual_result: "Fraud probability > 0.9"
+                low_risk:
+                  summary: Низкий риск
+                  value:
+                    transaction_id: "tx_98765"
+                    score: 0.05
+                    check_details:
+                      tool: "fraud-detector"
+                      version: "1.4.2"
+                      action: "Inference"
+                      actual_result: "Fraud probability < 0.1"
         '400':
-          description: Не хватает name или version
+          description: Что-то не так с признаками
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  error:
-                    type: string
+                $ref: '#/components/schemas/ErrorResponse'
               examples:
-                missing_fields:
-                  summary: Пример ошибки 400
+                bad_request:
+                  summary: Пример 400
                   value:
-                    error: 'Missing required fields: name, version'
-        '409':
-          description: Такая версия модели уже есть
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  error:
-                    type: string
-              examples:
-                conflict:
-                  summary: Пример ошибки 409
-                  value:
-                    error: Model version 1.4.2 already exists
+                    error: "Invalid features data"
         '500':
-          description: Не удалось сохранить модель
+          description: Внутренняя ошибка (модель не загрузилась и т.п.)
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  error:
-                    type: string
+                $ref: '#/components/schemas/ErrorResponse'
               examples:
                 server_error:
-                  summary: Пример ошибки 500
+                  summary: Пример 500
                   value:
-                    error: Failed to save model to storage
+                    error: "ML model not loaded"
+
+  /models:
     get:
-      summary: Получить список моделей
+      summary: Список моделей
       tags:
         - Models
+      description: Показывает, какие модели лежат в S3 и доступны для инференса.
       responses:
         '200':
           description: Список моделей
@@ -187,35 +109,107 @@ paths:
               schema:
                 type: array
                 items:
-                  type: object
-                  properties:
-                    name:
-                      type: string
-                    version:
-                      type: string
-                    status:
-                      type: string
+                  $ref: '#/components/schemas/ModelInfo'
               examples:
                 model_list:
-                  summary: Пример списка моделей
+                  summary: Пример списка
                   value:
-                    - name: fraud-detector
-                      version: 1.4.2
-                      status: active
-                    - name: fraud-detector
-                      version: 1.3.0
-                      status: archived
+                    - name: "fraud-detector"
+                      version: "1.4.2"
+                      status: "active"
+                    - name: "fraud-detector"
+                      version: "1.3.0"
+                      status: "archived"
         '500':
-          description: Не удалось получить список моделей
+          description: Не получилось отдать список
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  error:
-                    type: string
+                $ref: '#/components/schemas/ErrorResponse'
               examples:
                 server_error:
-                  summary: Пример ошибки 500
+                  summary: Пример 500
                   value:
-                    error: Internal server error
+                    error: "Failed to fetch model list"
+
+components:
+  schemas:
+    InferenceRequest:
+      type: object
+      required:
+        - transaction_id
+        - client_id
+        - features
+      properties:
+        transaction_id:
+          type: string
+          description: ID транзакции
+        client_id:
+          type: string
+          description: ID клиента
+        features:
+          type: object
+          description: Признаки клиента
+          required:
+            - avg_amount_30d
+            - tx_count_24h
+          properties:
+            avg_amount_30d:
+              type: number
+              format: float
+              description: Средняя сумма за 30 дней
+            tx_count_24h:
+              type: integer
+              description: Сколько транзакций за сутки
+            geo_risk:
+              type: number
+              format: float
+              description: Гео-риск
+            merchant_risk:
+              type: number
+              format: float
+              description: Риск мерчанта
+
+    InferenceResponse:
+      type: object
+      properties:
+        transaction_id:
+          type: string
+        score:
+          type: number
+          format: float
+          description: Скор от модели (0..1)
+        check_details:
+          type: object
+          description: Детали проверки
+          properties:
+            tool:
+              type: string
+              description: Модель
+            version:
+              type: string
+              description: Версия
+            action:
+              type: string
+              description: Действие
+            actual_result:
+              type: string
+              description: Результат
+
+    ModelInfo:
+      type: object
+      properties:
+        name:
+          type: string
+        version:
+          type: string
+        status:
+          type: string
+          enum: [active, archived]
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+          description: Текст ошибки
