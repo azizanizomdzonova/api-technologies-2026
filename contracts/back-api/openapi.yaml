@@ -7,7 +7,7 @@ paths:
   /v1/transactions/evaluate:
     post:
       summary: принять событие транзакции от АБС
-      operationId: process_transaction_event_v1_events_post
+      operationId: evaluate_transaction_v1_transactions_evaluate_post
       requestBody:
         content:
           application/json:
@@ -34,7 +34,19 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '500':
-          description: Сеервер упал / ошибка бэка
+          description: Сервер упал / ошибка бэка
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: ML-сервис или сервис «Решение» временно недоступен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '504':
+          description: Превышено время ожидания ответа от ML-сервиса или сервиса «Решение»
           content:
             application/json:
               schema:
@@ -43,14 +55,20 @@ components:
   schemas:
     ErrorResponse:
       properties:
-        detail:
+        code:
           type: string
-          title: Detail
-          description: Подробное описание ошибки
-          example: Неверная сумма транзакции
+          title: Code
+          description: Машинный код 
+          example: BAD_REQUEST
+        message:
+          type: string 
+          title: Massage
+          description: сообщение о том, какая ошибка
+          example: Неверная сумма 
       type: object
       required:
-      - detail
+      - code 
+      - message 
       title: ErrorResponse
     TransactionRequest:
       properties:
@@ -59,11 +77,21 @@ components:
           title: Transaction Id
           description: ID транзакции из АБС
           example: tx-777
-        user_id:
+        client_id:
           type: string
-          title: User Id
-          description: ID пользователя
-          example: usr-999
+          title: Client Id 
+          description: номер клиента 
+          example: "1"
+        region:
+          type: string 
+          title: Region
+          description: Местоположение транзакции 
+          example: "Russia"
+        merchant_id:
+          type: string 
+          title: Merchant Id
+          description: ID торговой точки (мерчанта)
+          example: "merch-001"
         account_id:
           type: string
           title: Account Id
@@ -79,7 +107,7 @@ components:
           type: string
           title: Currency
           description: Код валюты
-          example: 444
+          example: "444"
         timestamp:
           type: string
           title: Timestamp
@@ -88,7 +116,7 @@ components:
       type: object
       required:
       - transaction_id
-      - user_id
+      - client_id
       - account_id
       - amount
       - timestamp
@@ -131,3 +159,22 @@ components:
       title: VerdictEnum
       description: 0 - Одобрено, 1 - Фрод
       example: 0
+
+
+  /health:
+      get:
+        summary: Проверить состояние Gateway 
+        description: Проверяет доступность сервиса Gateway
+        responses:
+          '200':
+            description: Состояние сервиса
+            content:
+              application/json:
+                schema:
+                  type: object
+                  required:
+                    - status
+                  properties:
+                    status:
+                      type: string
+                      example: "ok"
