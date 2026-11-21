@@ -1,9 +1,6 @@
 fastapi
 uvicorn[standard]
-dill
-pandas
-scikit-learn==1.8.0
+redis
 grpcio
 grpcio-tools
-minio
-prometheus-client
+httpx
