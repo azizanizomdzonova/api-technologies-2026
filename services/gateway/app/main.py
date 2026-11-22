@@ -10,12 +10,13 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from .config import settings
+from .grpc_clients import UpstreamTimeoutError, UpstreamUnavailableError
+from .orchestrator import evaluate_transaction_flow
 from .schemas import (
     ErrorResponse,
     HealthResponse,
     TransactionRequest,
     TransactionVerdictResponse,
-    VerdictEnum,
 )
 
 logger = logging.getLogger("gateway")
@@ -77,6 +78,24 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
     return JSONResponse(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, content=payload.model_dump())
 
 
+@app.exception_handler(UpstreamTimeoutError)
+async def upstream_timeout_handler(request: Request, exc: UpstreamTimeoutError) -> JSONResponse:
+    payload = ErrorResponse(
+        code="UPSTREAM_TIMEOUT",
+        message=str(exc),
+    )
+    return JSONResponse(status_code=status.HTTP_504_GATEWAY_TIMEOUT, content=payload.model_dump())
+
+
+@app.exception_handler(UpstreamUnavailableError)
+async def upstream_unavailable_handler(request: Request, exc: UpstreamUnavailableError) -> JSONResponse:
+    payload = ErrorResponse(
+        code="UPSTREAM_UNAVAILABLE",
+        message=str(exc),
+    )
+    return JSONResponse(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, content=payload.model_dump())
+
+
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
     logger.exception("Unhandled internal error: %s", exc)
@@ -131,8 +150,12 @@ async def evaluate_transaction(
     request: Request,
     background_tasks: BackgroundTasks,
 ) -> TransactionVerdictResponse:
-    score = 0.05
-    verdict = VerdictEnum.APPROVED
+    score, verdict = await evaluate_transaction_flow(
+        tx=tx,
+        redis_client=request.app.state.redis,
+        ml_channel=request.app.state.ml_channel,
+        decision_channel=request.app.state.decision_channel,
+    )
 
     background_tasks.add_task(
         notify_updater,
