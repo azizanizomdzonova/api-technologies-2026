@@ -3,7 +3,7 @@
 import grpc
 import warnings
 
-from services.ml_service.proto import ml_service_pb2 as services_dot_ml__service_dot_proto_dot_ml__service__pb2
+from . import ml_service_pb2 as services_dot_ml__service_dot_proto_dot_ml__service__pb2
 
 GRPC_GENERATED_VERSION = '1.85.3'
 GRPC_VERSION = grpc.__version__

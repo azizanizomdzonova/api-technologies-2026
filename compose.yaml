@@ -1,6 +1,6 @@
 services:
   minio:
-    image: cgr.dev/chainguard/minio:latest
+    image: pgsty/silo:RELEASE.2026-11-12T00-00-00Z
     command: server /data --console-address ":9001"
     env_file:
       - .env
@@ -87,7 +87,7 @@ services:
       REDIS_PORT: "6379"
       ML_GRPC_ADDR: ml-grpc:50051
       DECISION_GRPC_ADDR: decision-grpc:50052
-      UPDATER_URL: http://updater:8002
+      UPDATER_URL: ""
     ports:
       - "8000:8000"
     depends_on:

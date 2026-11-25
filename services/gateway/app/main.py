@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
@@ -5,7 +6,7 @@ from datetime import datetime, timezone
 import grpc
 import httpx
 import redis.asyncio as redis
-from fastapi import BackgroundTasks, FastAPI, Request, status
+from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
@@ -34,18 +35,27 @@ async def lifespan(app: FastAPI):
     )
     app.state.ml_channel = grpc.aio.insecure_channel(settings.ml_grpc_addr)
     app.state.decision_channel = grpc.aio.insecure_channel(settings.decision_grpc_addr)
-    app.state.http_client = httpx.AsyncClient(
-        base_url=settings.updater_url,
-        timeout=settings.updater_timeout_sec,
+    app.state.bg_tasks: set[asyncio.Task] = set()
+    app.state.http_client = (
+        httpx.AsyncClient(
+            base_url=settings.updater_url,
+            timeout=settings.updater_timeout_sec,
+        )
+        if settings.updater_url
+        else None
     )
     logger.info("Gateway clients initialized")
 
     yield
 
+    for task in list(app.state.bg_tasks):
+        task.cancel()
+
     await app.state.redis.aclose()
     await app.state.ml_channel.close()
     await app.state.decision_channel.close()
-    await app.state.http_client.aclose()
+    if app.state.http_client is not None:
+        await app.state.http_client.aclose()
     logger.info("Gateway clients closed")
 
 
@@ -148,7 +158,6 @@ async def healthcheck() -> HealthResponse:
 async def evaluate_transaction(
     tx: TransactionRequest,
     request: Request,
-    background_tasks: BackgroundTasks,
 ) -> TransactionVerdictResponse:
     score, verdict = await evaluate_transaction_flow(
         tx=tx,
@@ -157,12 +166,12 @@ async def evaluate_transaction(
         decision_channel=request.app.state.decision_channel,
     )
 
-    background_tasks.add_task(
-        notify_updater,
-        request.app.state.http_client,
-        tx,
-        int(verdict),
-    )
+    if request.app.state.http_client is not None:
+        task = asyncio.create_task(
+            notify_updater(request.app.state.http_client, tx, int(verdict))
+        )
+        request.app.state.bg_tasks.add(task)
+        task.add_done_callback(request.app.state.bg_tasks.discard)
 
     return TransactionVerdictResponse(
         transaction_id=tx.transaction_id,

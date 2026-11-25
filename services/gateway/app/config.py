@@ -11,13 +11,13 @@ class Settings:
     redis_host: str = os.getenv("REDIS_HOST", "redis")
     redis_port: int = int(os.getenv("REDIS_PORT", "6379"))
     redis_db: int = int(os.getenv("REDIS_DB", "0"))
-    redis_timeout_sec: float = float(os.getenv("REDIS_TIMEOUT_SEC", "0.02"))
+    redis_timeout_sec: float = float(os.getenv("REDIS_TIMEOUT_SEC", "0.5"))
 
     ml_grpc_addr: str = os.getenv("ML_GRPC_ADDR", "ml-grpc:50051")
-    ml_timeout_sec: float = float(os.getenv("ML_TIMEOUT_SEC", "0.05"))
+    ml_timeout_sec: float = float(os.getenv("ML_TIMEOUT_SEC", "1.0"))
 
     decision_grpc_addr: str = os.getenv("DECISION_GRPC_ADDR", "decision-grpc:50052")
-    decision_timeout_sec: float = float(os.getenv("DECISION_TIMEOUT_SEC", "0.03"))
+    decision_timeout_sec: float = float(os.getenv("DECISION_TIMEOUT_SEC", "0.5"))
 
     updater_url: str = os.getenv("UPDATER_URL", "http://updater:8002")
     updater_timeout_sec: float = float(os.getenv("UPDATER_TIMEOUT_SEC", "1.0"))
